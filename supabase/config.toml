@@ -1,0 +1,16 @@
+project_id = "mqfcxhlfuqyakkrccmpj"
+
+[functions.end-session]
+verify_jwt = true
+
+[functions.generate-waveform]
+verify_jwt = true
+
+[functions.transcribe-audio]
+verify_jwt = true
+
+[functions.score-dialogue]
+verify_jwt = true
+
+[functions.score-rapid-review]
+verify_jwt = true
