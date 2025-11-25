@@ -14,10 +14,10 @@ import Contact from "./components/sections/Contact";
 import Auth from "./components/sections/Auth";
 import { AdminPanel } from "./components/sections/AdminPanel";
 import ExamDemo from "./pages/ExamDemo";
-import RapidReview from "./pages/RapidReview";
 import { useAuth } from "./hooks/useAuth";
 import { useAdmin } from "./hooks/useAdmin";
 import { AdminAccessButton } from "./components/AdminAccessButton";
+import { RapidReview } from "./pages/RapidReview";
 
 const queryClient = new QueryClient();
 

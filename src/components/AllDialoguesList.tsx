@@ -15,7 +15,6 @@ import {
   SkipBack,
   SkipForward,
   Calendar,
-  BarChart3,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
@@ -56,31 +55,6 @@ interface DialogueSegment {
   end_time?: number;
 }
 
-interface ScoringResult {
-  dialogueIndex: number;
-  transcript: string;
-  reference_transcript: string;
-  student_transcript: string;
-  scores: {
-    accuracy_score: number;
-    accuracy_feedback: string;
-    language_quality_score: number;
-    language_quality_feedback: string;
-    fluency_pronunciation_score: number;
-    fluency_pronunciation_feedback: string;
-    delivery_coherence_score: number;
-    delivery_coherence_feedback: string;
-    cultural_context_score: number;
-    cultural_context_feedback: string;
-    response_management_score: number;
-    response_management_feedback: string;
-    total_raw_score: number;
-    final_score: number;
-    one_line_feedback: string;
-  };
-  one_line_feedback: string;
-}
-
 interface ExamResult {
   id: string;
   user_id: string;
@@ -99,11 +73,38 @@ interface ExamResult {
   created_at: string;
 }
 
-interface UserExamResultsResponse {
-  success: boolean;
-  user_id: string;
-  results: ExamResult[];
-}
+// Audio Waves Component using your provided code
+const AudioWaves = ({ isPlaying }: { isPlaying: boolean }) => {
+  const bars = 12;
+  const waveHeights = [6, 10, 14, 18, 22, 18, 14, 10, 6, 10, 14, 18];
+
+  return (
+    <div className="flex items-center justify-center space-x-1 h-6">
+      {isPlaying ? (
+        <img
+          src={
+            "https://cdn.pixabay.com/animation/2023/10/10/13/26/13-26-45-476_512.gif"
+          }
+          alt="sound"
+          width={120}
+          className="object-contain"
+        />
+      ) : (
+        <div className="flex items-end justify-center space-x-1">
+          {Array.from({ length: bars }).map((_, i) => (
+            <div
+              key={i}
+              className="w-1 rounded-full bg-gray-400 transition-all duration-300"
+              style={{
+                height: `${waveHeights[i % waveHeights.length]}px`,
+              }}
+            ></div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
 
 export function AllDialoguesList() {
   const { user } = useAuth();
@@ -142,14 +143,20 @@ export function AllDialoguesList() {
   const [recordedAudios, setRecordedAudios] = useState<Map<number, Blob>>(
     new Map()
   );
-  const [scoringResults, setScoringResults] = useState<ScoringResult[]>([]);
-  const [showFinalResults, setShowFinalResults] = useState(false);
-  const [examResult, setExamResult] = useState<ExamResult | null>(null);
-  const [userExamResults, setUserExamResults] = useState<ExamResult[]>([]);
+  const [examResults, setExamResults] = useState<ExamResult[]>([]);
   const [answerIds, setAnswerIds] = useState<string[]>([]);
   const [userAudioUrls, setUserAudioUrls] = useState<Map<number, string>>(
     new Map()
   );
+
+  // NEW STATES for recording control
+  const [hasPlayedOriginal, setHasPlayedOriginal] = useState(false);
+  const [recordingStartTime, setRecordingStartTime] = useState<number>(0);
+  const [canStopRecording, setCanStopRecording] = useState(false);
+  const [completedSegments, setCompletedSegments] = useState<Set<number>>(
+    new Set()
+  );
+  const [showResults, setShowResults] = useState(false);
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
@@ -164,7 +171,6 @@ export function AllDialoguesList() {
   }, [user]);
 
   useEffect(() => {
-    // Initialize audio elements
     audioRef.current = new Audio();
     userAudioRef.current = new Audio();
 
@@ -177,12 +183,11 @@ export function AllDialoguesList() {
         userAudioRef.current.pause();
         userAudioRef.current = null;
       }
-      // Clean up object URLs
       userAudioUrls.forEach((url) => URL.revokeObjectURL(url));
     };
   }, []);
 
-  // Fetch user exam results from API - STANDALONE FUNCTION
+  // Fetch user exam results from API
   const fetchUserExamResults = async (): Promise<ExamResult[]> => {
     if (!user) {
       toast({
@@ -197,15 +202,11 @@ export function AllDialoguesList() {
       const { data, error } = await supabase.functions.invoke(
         "get-user-exam-results",
         {
-          body: {
-            userId: user.id,
-          },
+          body: { userId: user.id },
         }
       );
 
-      if (error) {
-        throw new Error(error.message);
-      }
+      if (error) throw new Error(error.message);
 
       if (data.success) {
         console.log("Fetched user exam results:", data.results);
@@ -221,31 +222,6 @@ export function AllDialoguesList() {
         variant: "destructive",
       });
       return [];
-    }
-  };
-
-  // NEW FUNCTION: Handle Get All Results button click - STANDALONE FUNCTION
-  const handleGetAllResults = async () => {
-    if (!user) return;
-
-    setIsProcessing(true);
-    try {
-      const results = await fetchUserExamResults();
-      setUserExamResults(results);
-      setShowFinalResults(true);
-      toast({
-        title: "Results Loaded",
-        description: "Your complete exam history has been loaded",
-      });
-    } catch (error) {
-      console.error("Error loading all results:", error);
-      toast({
-        title: "Error",
-        description: "Failed to load your exam history",
-        variant: "destructive",
-      });
-    } finally {
-      setIsProcessing(false);
     }
   };
 
@@ -278,7 +254,7 @@ export function AllDialoguesList() {
       const loadCompletedResults = async () => {
         try {
           const results = await fetchUserExamResults();
-          setUserExamResults(results);
+          setExamResults(results);
         } catch (error) {
           console.error("Error loading completed results:", error);
         }
@@ -308,15 +284,7 @@ export function AllDialoguesList() {
 
       const { data: dialogueData, error } = await supabase
         .from("dialogues")
-        .select(
-          `\
-          *,\
-          domains (\
-            title,\
-            color\
-          )\
-        `
-        )
+        .select(`*, domains (title, color)`)
         .eq("language_id", profile.language_id)
         .order("title");
 
@@ -348,6 +316,10 @@ export function AllDialoguesList() {
     try {
       setSelectedDialogue(dialogue);
       setLoading(true);
+      setHasPlayedOriginal(false);
+      setCanStopRecording(false);
+      setCompletedSegments(new Set());
+      setShowResults(false);
 
       const { data, error } = await supabase.functions.invoke(
         "get-dialogue-segments",
@@ -356,18 +328,13 @@ export function AllDialoguesList() {
         }
       );
 
-      if (error) {
-        throw new Error(error.message);
-      }
+      if (error) throw new Error(error.message);
 
       if (data.success) {
         setDialogueSegments(data.segments);
         setCurrentSegmentIndex(0);
         setRecordedAudios(new Map());
-        setScoringResults([]);
-        setShowFinalResults(false);
-        setExamResult(null);
-        setUserExamResults([]);
+        setExamResults([]);
         setAnswerIds([]);
         setUserAudioUrls(new Map());
       } else {
@@ -391,25 +358,17 @@ export function AllDialoguesList() {
     try {
       setIsPlaying(true);
 
-      // Create signed URL for the audio file
       const { data, error } = await supabase.storage
         .from("dialogue-audio")
-        .createSignedUrl(segment.audio_url, 60); // 60 seconds expiry
+        .createSignedUrl(segment.audio_url, 60);
 
-      if (error) {
-        throw new Error(error.message);
-      }
-
-      if (!data?.signedUrl) {
-        throw new Error("No signed URL received");
-      }
-
-      console.log("Playing audio from:", data.signedUrl);
+      if (error) throw new Error(error.message);
+      if (!data?.signedUrl) throw new Error("No signed URL received");
 
       audioRef.current.src = data.signedUrl;
       audioRef.current.onended = () => {
         setIsPlaying(false);
-        console.log("Audio playback finished");
+        setHasPlayedOriginal(true);
       };
 
       audioRef.current.onerror = () => {
@@ -452,7 +411,6 @@ export function AllDialoguesList() {
     try {
       setIsPlayingUserRecording(true);
 
-      // Create object URL for the recorded audio if not already exists
       let audioUrl = userAudioUrls.get(currentSegmentIndex);
       if (!audioUrl) {
         audioUrl = URL.createObjectURL(recordedAudio);
@@ -462,11 +420,7 @@ export function AllDialoguesList() {
       }
 
       userAudioRef.current.src = audioUrl;
-      userAudioRef.current.onended = () => {
-        setIsPlayingUserRecording(false);
-        console.log("User recording playback finished");
-      };
-
+      userAudioRef.current.onended = () => setIsPlayingUserRecording(false);
       userAudioRef.current.onerror = () => {
         setIsPlayingUserRecording(false);
         toast({
@@ -536,11 +490,8 @@ export function AllDialoguesList() {
           new Map(prev).set(currentSegmentIndex, audioBlob)
         );
 
-        // Clean up previous audio URL for this segment
         const previousUrl = userAudioUrls.get(currentSegmentIndex);
-        if (previousUrl) {
-          URL.revokeObjectURL(previousUrl);
-        }
+        if (previousUrl) URL.revokeObjectURL(previousUrl);
         setUserAudioUrls((prev) => new Map(prev).set(currentSegmentIndex, ""));
 
         stream.getTracks().forEach((track) => track.stop());
@@ -554,6 +505,10 @@ export function AllDialoguesList() {
 
       mediaRecorder.start(100);
       setIsRecording(true);
+      setRecordingStartTime(Date.now());
+      setCanStopRecording(false);
+
+      setTimeout(() => setCanStopRecording(true), 2000);
 
       toast({
         title: "Recording Started",
@@ -571,16 +526,24 @@ export function AllDialoguesList() {
   };
 
   const stopRecording = () => {
-    if (mediaRecorderRef.current && isRecording) {
+    if (mediaRecorderRef.current && isRecording && canStopRecording) {
       mediaRecorderRef.current.stop();
       setIsRecording(false);
+      setCanStopRecording(false);
+    } else if (isRecording && !canStopRecording) {
+      toast({
+        title: "Recording Too Short",
+        description: "Please record for at least 2 seconds",
+        variant: "destructive",
+      });
     }
   };
 
   const goToNextSegment = () => {
     if (currentSegmentIndex < dialogueSegments.length - 1) {
       setCurrentSegmentIndex((prev) => prev + 1);
-      // Pause any playing audio when changing segments
+      setHasPlayedOriginal(false);
+      setCanStopRecording(false);
       pauseAudio();
     }
   };
@@ -588,7 +551,8 @@ export function AllDialoguesList() {
   const goToPreviousSegment = () => {
     if (currentSegmentIndex > 0) {
       setCurrentSegmentIndex((prev) => prev - 1);
-      // Pause any playing audio when changing segments
+      setHasPlayedOriginal(false);
+      setCanStopRecording(false);
       pauseAudio();
     }
   };
@@ -596,17 +560,14 @@ export function AllDialoguesList() {
   function arrayBufferToBase64(buffer: ArrayBuffer): string {
     const bytes = new Uint8Array(buffer);
     let binary = "";
-
     for (let i = 0; i < bytes.byteLength; i++) {
       binary += String.fromCharCode(bytes[i]);
     }
-
     return btoa(binary);
   }
 
   const getLanguageCode = (language: string | null) => {
     if (!language) return null;
-
     switch (language.trim().toLowerCase()) {
       case "english":
         return "en";
@@ -623,9 +584,37 @@ export function AllDialoguesList() {
     }
   };
 
-  // STEP 2: Score current segment with correct API format - FIXED VERSION
+  // NEW FUNCTION: Load results after last segment submission
+  const loadExamResults = async () => {
+    if (!user) return;
+
+    setIsProcessing(true);
+    try {
+      const results = await fetchUserExamResults();
+      setExamResults(results);
+      setShowResults(true);
+
+      toast({
+        title: "Practice Complete!",
+        description: "Your results have been loaded successfully",
+      });
+
+      // Refresh completed dialogues
+      fetchCompletedDialogues();
+    } catch (error) {
+      console.error("Error loading exam results:", error);
+      toast({
+        title: "Error",
+        description: "Failed to load your results",
+        variant: "destructive",
+      });
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  // STEP 2: Score current segment - MODIFIED to handle last segment automatically
   const scoreCurrentSegment = async () => {
-    // Early return to prevent multiple calls
     if (isProcessing) return;
 
     const currentSegment = dialogueSegments[currentSegmentIndex];
@@ -643,11 +632,9 @@ export function AllDialoguesList() {
     setIsProcessing(true);
 
     try {
-      // Convert student audio to base64
       const arrayBuffer = await recordedAudio.arrayBuffer();
       const studentAudioBase64 = arrayBufferToBase64(arrayBuffer);
 
-      // Get reference audio signed URL and convert to base64
       const { data: signedUrlData, error: signedUrlError } =
         await supabase.storage
           .from("dialogue-audio")
@@ -670,17 +657,16 @@ export function AllDialoguesList() {
         referenceAudioArrayBuffer
       );
 
-      // Prepare the request body according to API specification
       const requestBody = {
         userId: user.id,
-        mockTestId: selectedDialogue.id, // dialogue ID
+        mockTestId: selectedDialogue.id,
         audioFormat: "webm",
         dialogues: [
           {
             dialogueIndex: currentSegmentIndex + 1,
-            segmentId: currentSegment.id, // segment ID
+            segmentId: currentSegment.id,
             language: getLanguageCode(userLanguage),
-            referenceText: currentSegment.text_content, // text_content as referenceText
+            referenceText: currentSegment.text_content,
             segments: [
               {
                 referenceAudio: referenceAudioBase64,
@@ -691,14 +677,6 @@ export function AllDialoguesList() {
         ],
       };
 
-      console.log("Sending scoring request:", {
-        userId: user.id,
-        mockTestId: selectedDialogue.id,
-        segmentId: currentSegment.id,
-        dialogueIndex: currentSegmentIndex + 1,
-      });
-
-      // Score the segment using the correct API format
       const { data, error } = await supabase.functions.invoke(
         "score-mock-test",
         {
@@ -706,86 +684,44 @@ export function AllDialoguesList() {
         }
       );
 
-      if (error) {
-        throw new Error(error.message);
-      }
+      if (error) throw new Error(error.message);
 
       if (data.success && data.dialogues && data.dialogues.length > 0) {
         const result = data.dialogues[0];
 
-        // Use functional update to avoid state dependency issues
-        setScoringResults((prev) => {
-          const newResults = [...prev];
-          newResults[currentSegmentIndex] = result;
-          return newResults;
-        });
-
-        // Store answer ID for final computation if available
         if (result.answerId) {
           setAnswerIds((prev) => [...prev, result.answerId]);
         }
 
+        setCompletedSegments((prev) => new Set(prev).add(currentSegmentIndex));
+
         toast({
-          title: "Segment Scored!",
-          description: `Score: ${result.scores.final_score}`,
+          title: "Segment Submitted!",
+          description: "Your response has been submitted successfully",
         });
+
+        // CHECK IF THIS IS THE LAST SEGMENT
+        const isLastSegment =
+          currentSegmentIndex === dialogueSegments.length - 1;
+
+        if (isLastSegment) {
+          // LAST SEGMENT: Automatically load results
+          await loadExamResults();
+        } else {
+          // NOT LAST SEGMENT: Move to next segment
+          setTimeout(() => {
+            goToNextSegment();
+          }, 1000);
+        }
       } else {
         throw new Error("Scoring failed - no results returned");
       }
     } catch (error) {
       console.error("Error scoring segment:", error);
       toast({
-        title: "Scoring Error",
+        title: "Submission Error",
         description:
-          error instanceof Error ? error.message : "Failed to score segment",
-        variant: "destructive",
-      });
-    } finally {
-      setIsProcessing(false);
-    }
-  };
-
-  // STEP 3: Compute final results - REMOVED the automatic fetch
-  const computeFinalResults = async () => {
-    if (!user || answerIds.length === 0) return;
-
-    setIsProcessing(true);
-
-    try {
-      const { data, error } = await supabase.functions.invoke(
-        "compute-dialogue-result",
-        {
-          body: {
-            userId: user.id,
-            answerIds: answerIds,
-          },
-        }
-      );
-
-      if (error) {
-        throw new Error(error.message);
-      }
-
-      if (data.success) {
-        setExamResult(data.result);
-        setShowFinalResults(true);
-
-        toast({
-          title: "Practice Complete!",
-          description: `Final Score: ${data.result.total_score}`,
-        });
-
-        // Refresh completed dialogues
-        fetchCompletedDialogues();
-      } else {
-        throw new Error("Failed to compute final results");
-      }
-    } catch (error) {
-      console.error("Error computing final results:", error);
-      toast({
-        title: "Error",
-        description:
-          error instanceof Error ? error.message : "Failed to compute results",
+          error instanceof Error ? error.message : "Failed to submit segment",
         variant: "destructive",
       });
     } finally {
@@ -797,12 +733,10 @@ export function AllDialoguesList() {
     setSelectedDialogue(null);
     setDialogueSegments([]);
     setCurrentSegmentIndex(0);
-    setShowFinalResults(false);
-    setExamResult(null);
-    setUserExamResults([]);
-    setScoringResults([]);
+    setShowResults(false);
+    setExamResults([]);
     setRecordedAudios(new Map());
-    // Clean up all object URLs
+    setCompletedSegments(new Set());
     userAudioUrls.forEach((url) => URL.revokeObjectURL(url));
     setUserAudioUrls(new Map());
     pauseAudio();
@@ -814,7 +748,6 @@ export function AllDialoguesList() {
       newMap.delete(currentSegmentIndex);
       return newMap;
     });
-    // Clean up audio URL for this segment
     const audioUrl = userAudioUrls.get(currentSegmentIndex);
     if (audioUrl) {
       URL.revokeObjectURL(audioUrl);
@@ -824,10 +757,6 @@ export function AllDialoguesList() {
         return newUrls;
       });
     }
-    // Remove scoring result for this segment if exists
-    setScoringResults((prev) =>
-      prev.filter((_, index) => index !== currentSegmentIndex)
-    );
     pauseAudio();
   };
 
@@ -849,9 +778,8 @@ export function AllDialoguesList() {
     }
 
     filtered.sort((a, b) => {
-      if (sortBy === "title") {
-        return a.title.localeCompare(b.title);
-      } else if (sortBy === "difficulty") {
+      if (sortBy === "title") return a.title.localeCompare(b.title);
+      else if (sortBy === "difficulty") {
         const difficultyOrder = { Beginner: 1, Intermediate: 2, Advanced: 3 };
         return (
           (difficultyOrder[a.difficulty as keyof typeof difficultyOrder] || 0) -
@@ -873,11 +801,8 @@ export function AllDialoguesList() {
   const toggleBookmark = (dialogueId: string) => {
     setBookmarkedDialogues((prev) => {
       const newSet = new Set(prev);
-      if (newSet.has(dialogueId)) {
-        newSet.delete(dialogueId);
-      } else {
-        newSet.add(dialogueId);
-      }
+      if (newSet.has(dialogueId)) newSet.delete(dialogueId);
+      else newSet.add(dialogueId);
       return newSet;
     });
   };
@@ -889,7 +814,6 @@ export function AllDialoguesList() {
     setActiveTab("all");
   };
 
-  // Format date for display
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleDateString("en-US", {
       year: "numeric",
@@ -905,14 +829,22 @@ export function AllDialoguesList() {
     const currentSegment = dialogueSegments[currentSegmentIndex];
     const progress =
       ((currentSegmentIndex + 1) / dialogueSegments.length) * 100;
-    const currentScore = scoringResults[currentSegmentIndex];
     const hasRecorded = recordedAudios.has(currentSegmentIndex);
     const isLastSegment = currentSegmentIndex === dialogueSegments.length - 1;
-    const allSegmentsScored = scoringResults.length === dialogueSegments.length;
 
-    if (showFinalResults) {
+    // Navigation logic
+    const isCurrentSegmentCompleted =
+      completedSegments.has(currentSegmentIndex);
+    const canGoToNextSegment =
+      currentSegmentIndex < dialogueSegments.length - 1 &&
+      isCurrentSegmentCompleted;
+    const canGoToPreviousSegment =
+      currentSegmentIndex > 0 && completedSegments.has(currentSegmentIndex - 1);
+
+    // SHOW RESULTS SECTION INSTEAD OF SEGMENTS WHEN LAST SEGMENT IS COMPLETED
+    if (showResults && examResults.length > 0) {
       return (
-        <div className="w-full max-w-6xl mx-auto space-y-6">
+        <div className="w-full max-w-4xl mx-auto space-y-6">
           <Card>
             <CardHeader className="text-center">
               <div className="flex items-center justify-center gap-2">
@@ -921,32 +853,80 @@ export function AllDialoguesList() {
               </div>
             </CardHeader>
             <CardContent className="space-y-6">
-              {/* Current Practice Results */}
-              {examResult && (
+              {/* Latest Result Summary */}
+              {examResults[0] && (
                 <div className="space-y-4">
                   <div className="text-center">
                     <div className="text-4xl font-bold text-green-500 mb-2">
-                      {examResult.total_final_score}
+                      {examResults[0].total_final_score}
                     </div>
                     <p className="text-lg text-muted-foreground">Final Score</p>
                   </div>
 
                   <div className="p-4 bg-muted rounded-lg">
                     <h3 className="font-semibold mb-2">Overall Feedback:</h3>
-                    <p>{examResult.overall_feedback}</p>
+                    <p>{examResults[0].overall_feedback}</p>
+                  </div>
+
+                  <div className="grid grid-cols-2 md:grid-cols-3 gap-4 text-sm">
+                    <div className="text-center p-3 bg-blue-50 rounded-lg">
+                      <div className="font-bold text-blue-600">
+                        {examResults[0].average_accuracy_score.toFixed(1)}
+                      </div>
+                      <div className="text-muted-foreground">Accuracy</div>
+                    </div>
+                    <div className="text-center p-3 bg-green-50 rounded-lg">
+                      <div className="font-bold text-green-600">
+                        {examResults[0].average_language_quality_score.toFixed(
+                          1
+                        )}
+                      </div>
+                      <div className="text-muted-foreground">Language</div>
+                    </div>
+                    <div className="text-center p-3 bg-purple-50 rounded-lg">
+                      <div className="font-bold text-purple-600">
+                        {examResults[0].average_fluency_pronunciation_score.toFixed(
+                          1
+                        )}
+                      </div>
+                      <div className="text-muted-foreground">Fluency</div>
+                    </div>
+                    <div className="text-center p-3 bg-yellow-50 rounded-lg">
+                      <div className="font-bold text-yellow-600">
+                        {examResults[0].average_delivery_coherence_score.toFixed(
+                          1
+                        )}
+                      </div>
+                      <div className="text-muted-foreground">Delivery</div>
+                    </div>
+                    <div className="text-center p-3 bg-red-50 rounded-lg">
+                      <div className="font-bold text-red-600">
+                        {examResults[0].average_cultural_context_score.toFixed(
+                          1
+                        )}
+                      </div>
+                      <div className="text-muted-foreground">Cultural</div>
+                    </div>
+                    <div className="text-center p-3 bg-indigo-50 rounded-lg">
+                      <div className="font-bold text-indigo-600">
+                        {examResults[0].average_response_management_score.toFixed(
+                          1
+                        )}
+                      </div>
+                      <div className="text-muted-foreground">Response</div>
+                    </div>
                   </div>
                 </div>
               )}
 
-              {/* User's All Exam Results - Only shown when Get All Results is clicked */}
-              {userExamResults.length > 0 && (
+              {/* Previous Attempts */}
+              {examResults.length > 1 && (
                 <div className="space-y-4">
                   <h3 className="text-xl font-bold text-center">
-                    Your Complete Exam History
+                    Your Previous Attempts
                   </h3>
-
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                    {userExamResults.map((result, index) => (
+                  <div className="space-y-3">
+                    {examResults.slice(1).map((result, index) => (
                       <Card
                         key={result.id}
                         className="border-l-4 border-l-blue-500"
@@ -954,7 +934,7 @@ export function AllDialoguesList() {
                         <CardHeader className="pb-2">
                           <div className="flex items-center justify-between">
                             <CardTitle className="text-sm">
-                              Attempt {userExamResults.length - index}
+                              Attempt {examResults.length - index - 1}
                             </CardTitle>
                             <Badge variant="outline" className="text-xs">
                               {result.segment_count} segments
@@ -965,7 +945,7 @@ export function AllDialoguesList() {
                             {formatDate(result.created_at)}
                           </div>
                         </CardHeader>
-                        <CardContent className="space-y-3">
+                        <CardContent className="space-y-2">
                           <div className="text-center">
                             <div className="text-2xl font-bold text-blue-600">
                               {result.total_final_score}
@@ -974,68 +954,6 @@ export function AllDialoguesList() {
                               Total Score
                             </div>
                           </div>
-
-                          <div className="grid grid-cols-2 gap-2 text-xs">
-                            <div className="text-center">
-                              <div className="font-semibold">
-                                {result.average_accuracy_score.toFixed(1)}
-                              </div>
-                              <div className="text-muted-foreground">
-                                Accuracy
-                              </div>
-                            </div>
-                            <div className="text-center">
-                              <div className="font-semibold">
-                                {result.average_language_quality_score.toFixed(
-                                  1
-                                )}
-                              </div>
-                              <div className="text-muted-foreground">
-                                Language
-                              </div>
-                            </div>
-                            <div className="text-center">
-                              <div className="font-semibold">
-                                {result.average_fluency_pronunciation_score.toFixed(
-                                  1
-                                )}
-                              </div>
-                              <div className="text-muted-foreground">
-                                Fluency
-                              </div>
-                            </div>
-                            <div className="text-center">
-                              <div className="font-semibold">
-                                {result.average_delivery_coherence_score.toFixed(
-                                  1
-                                )}
-                              </div>
-                              <div className="text-muted-foreground">
-                                Delivery
-                              </div>
-                            </div>
-                            <div className="text-center">
-                              <div className="font-semibold">
-                                {result.average_cultural_context_score.toFixed(
-                                  1
-                                )}
-                              </div>
-                              <div className="text-muted-foreground">
-                                Cultural
-                              </div>
-                            </div>
-                            <div className="text-center">
-                              <div className="font-semibold">
-                                {result.average_response_management_score.toFixed(
-                                  1
-                                )}
-                              </div>
-                              <div className="text-muted-foreground">
-                                Response
-                              </div>
-                            </div>
-                          </div>
-
                           {result.overall_feedback && (
                             <div className="p-2 bg-blue-50 rounded text-xs">
                               <p className="font-medium">Feedback:</p>
@@ -1048,24 +966,6 @@ export function AllDialoguesList() {
                       </Card>
                     ))}
                   </div>
-                </div>
-              )}
-
-              {/* Get All Results Button - Only show if user hasn't loaded all results yet */}
-              {userExamResults.length === 0 && (
-                <div className="text-center">
-                  <Button
-                    onClick={handleGetAllResults}
-                    disabled={isProcessing}
-                    className="bg-purple-600 hover:bg-purple-700"
-                    size="lg"
-                  >
-                    <BarChart3 className="h-5 w-5 mr-2" />
-                    {isProcessing ? "Loading..." : "Get All Results"}
-                  </Button>
-                  <p className="text-sm text-muted-foreground mt-2">
-                    View your complete exam history and progress
-                  </p>
                 </div>
               )}
 
@@ -1084,6 +984,7 @@ export function AllDialoguesList() {
       );
     }
 
+    // NORMAL SEGMENT PRACTICE UI
     return (
       <div className="w-full max-w-4xl mx-auto space-y-6">
         {/* Progress Header */}
@@ -1110,10 +1011,10 @@ export function AllDialoguesList() {
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
-            {/* Reference Text with Audio Controls */}
+            {/* Audio Visualization */}
             <div className="p-4 bg-muted rounded-lg">
               <div className="flex items-center justify-between mb-2">
-                <h4 className="font-medium">Original Text:</h4>
+                <h4 className="font-medium">Original Audio:</h4>
                 <Button
                   onClick={() =>
                     isPlaying ? pauseAudio() : playSegmentAudio(currentSegment)
@@ -1130,7 +1031,14 @@ export function AllDialoguesList() {
                   )}
                 </Button>
               </div>
-              <p className="text-sm">{currentSegment.text_content}</p>
+
+              <div className="flex justify-center py-2">
+                <AudioWaves isPlaying={isPlaying} />
+              </div>
+
+              <p className="text-xs text-muted-foreground text-center mt-2">
+                Listen to the original audio and then record your interpretation
+              </p>
             </div>
 
             {/* Translation */}
@@ -1186,7 +1094,7 @@ export function AllDialoguesList() {
             <div className="flex gap-2 flex-wrap">
               <Button
                 onClick={isRecording ? stopRecording : startRecording}
-                disabled={isProcessing}
+                disabled={isProcessing || !hasPlayedOriginal}
                 variant={isRecording ? "destructive" : "default"}
               >
                 {isRecording ? (
@@ -1194,10 +1102,14 @@ export function AllDialoguesList() {
                 ) : (
                   <Mic className="h-4 w-4" />
                 )}
-                {isRecording ? "Stop Recording" : "Start Recording"}
+                {isRecording
+                  ? canStopRecording
+                    ? "Stop Recording"
+                    : "Recording... (2s)"
+                  : "Start Recording"}
               </Button>
 
-              {hasRecorded && !currentScore && (
+              {hasRecorded && (
                 <Button
                   onClick={retrySegment}
                   variant="outline"
@@ -1208,13 +1120,13 @@ export function AllDialoguesList() {
                 </Button>
               )}
 
-              {hasRecorded && !currentScore && (
+              {hasRecorded && (
                 <Button
                   onClick={scoreCurrentSegment}
                   disabled={isProcessing}
                   className="bg-green-600 hover:bg-green-700"
                 >
-                  {isProcessing ? "Scoring..." : "Submit for Scoring"}
+                  {isProcessing ? "Submitting..." : "Submit Response"}
                 </Button>
               )}
             </div>
@@ -1223,104 +1135,22 @@ export function AllDialoguesList() {
             <div className="flex justify-between items-center pt-4 border-t">
               <Button
                 onClick={goToPreviousSegment}
-                disabled={currentSegmentIndex === 0 || isProcessing}
+                disabled={!canGoToPreviousSegment || isProcessing}
                 variant="outline"
               >
                 <SkipBack className="h-4 w-4 mr-2" />
                 Previous
               </Button>
 
-              {isLastSegment && allSegmentsScored && (
-                <Button
-                  onClick={computeFinalResults}
-                  disabled={isProcessing}
-                  className="bg-blue-600 hover:bg-blue-700"
-                >
-                  {isProcessing ? "Computing Results..." : "Get Final Results"}
-                </Button>
-              )}
-
               <Button
                 onClick={goToNextSegment}
-                disabled={
-                  currentSegmentIndex === dialogueSegments.length - 1 ||
-                  !currentScore ||
-                  isProcessing
-                }
+                disabled={!canGoToNextSegment || isProcessing}
                 variant="outline"
               >
                 Next
                 <SkipForward className="h-4 w-4 ml-2" />
               </Button>
             </div>
-
-            {/* Current Score Display */}
-            {currentScore && (
-              <Card className="border-l-4 border-l-green-500">
-                <CardHeader>
-                  <CardTitle className="text-lg">
-                    Segment Score: {currentScore.scores.final_score}
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-                    <div className="text-center">
-                      <div className="font-semibold">
-                        {currentScore.scores.accuracy_score}
-                      </div>
-                      <div className="text-xs text-muted-foreground">
-                        Accuracy
-                      </div>
-                    </div>
-                    <div className="text-center">
-                      <div className="font-semibold">
-                        {currentScore.scores.language_quality_score}
-                      </div>
-                      <div className="text-xs text-muted-foreground">
-                        Language Quality
-                      </div>
-                    </div>
-                    <div className="text-center">
-                      <div className="font-semibold">
-                        {currentScore.scores.fluency_pronunciation_score}
-                      </div>
-                      <div className="text-xs text-muted-foreground">
-                        Fluency & Pronunciation
-                      </div>
-                    </div>
-                    <div className="text-center">
-                      <div className="font-semibold">
-                        {currentScore.scores.delivery_coherence_score}
-                      </div>
-                      <div className="text-xs text-muted-foreground">
-                        Delivery
-                      </div>
-                    </div>
-                    <div className="text-center">
-                      <div className="font-semibold">
-                        {currentScore.scores.cultural_context_score}
-                      </div>
-                      <div className="text-xs text-muted-foreground">
-                        Cultural Context
-                      </div>
-                    </div>
-                    <div className="text-center">
-                      <div className="font-semibold">
-                        {currentScore.scores.response_management_score}
-                      </div>
-                      <div className="text-xs text-muted-foreground">
-                        Response Management
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="p-3 bg-muted rounded-lg">
-                    <h5 className="font-medium mb-1">Feedback:</h5>
-                    <p className="text-sm">{currentScore.one_line_feedback}</p>
-                  </div>
-                </CardContent>
-              </Card>
-            )}
           </CardContent>
         </Card>
 
@@ -1341,7 +1171,7 @@ export function AllDialoguesList() {
 
   // Show exam results in Complete tab
   const showExamResultsInCompleteTab =
-    activeTab === "completed" && userExamResults.length > 0;
+    activeTab === "completed" && examResults.length > 0;
 
   return (
     <div className="space-y-6">
@@ -1375,12 +1205,12 @@ export function AllDialoguesList() {
         <div className="space-y-4">
           <h3 className="text-xl font-bold">Your Completed Exams</h3>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {userExamResults.map((result, index) => (
+            {examResults.map((result, index) => (
               <Card key={result.id} className="border-l-4 border-l-green-500">
                 <CardHeader className="pb-2">
                   <div className="flex items-center justify-between">
                     <CardTitle className="text-sm">
-                      Attempt {userExamResults.length - index}
+                      Attempt {examResults.length - index}
                     </CardTitle>
                     <Badge variant="outline" className="text-xs">
                       {result.segment_count} segments
