@@ -750,13 +750,6 @@ export function RapidReview() {
                 </h4>
                 <div className="flex gap-2">
                   <Button
-                    onClick={handleSubmit}
-                    disabled={isProcessing}
-                    className="bg-green-600 hover:bg-green-700 flex-1"
-                  >
-                    {isProcessing ? "Submitting..." : "Submit"}
-                  </Button>
-                  <Button
                     onClick={handleRepeat}
                     variant="outline"
                     disabled={isProcessing}
@@ -764,6 +757,13 @@ export function RapidReview() {
                   >
                     <RotateCcw className="h-4 w-4 mr-2" />
                     Repeat ({repeatCount + 1})
+                  </Button>
+                  <Button
+                    onClick={handleSubmit}
+                    disabled={isProcessing}
+                    className="bg-green-600 hover:bg-green-700 flex-1"
+                  >
+                    {isProcessing ? "Submitting..." : "Submit"}
                   </Button>
                 </div>
               </div>
