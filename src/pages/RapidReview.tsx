@@ -70,24 +70,20 @@ interface ScoringResult {
 // Audio Waves Component
 const AudioWaves = ({ isPlaying }: { isPlaying: boolean }) => {
   const bars = 12;
-
-  // Predefined bar heights for smooth animation (no flicker)
   const waveHeights = [6, 10, 14, 18, 22, 18, 14, 10, 6, 10, 14, 18];
 
   return (
     <div className="flex items-center justify-center space-x-1 h-6">
       {isPlaying ? (
-        // 🔊 GIF animation when playing
         <img
           src={
             "https://cdn.pixabay.com/animation/2023/10/10/13/26/13-26-45-476_512.gif"
-          } // Make sure this is inside /public
+          }
           alt="sound"
           width={120}
           className="object-contain"
         />
       ) : (
-        // 🔈 Static bars when paused
         <div className="flex items-end justify-center space-x-1">
           {Array.from({ length: bars }).map((_, i) => (
             <div
@@ -136,7 +132,6 @@ export function RapidReview() {
   const [currentSegmentIndex, setCurrentSegmentIndex] = useState(0);
   const [isRecording, setIsRecording] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
-  const [isPlayingUserRecording, setIsPlayingUserRecording] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [recordedAudios, setRecordedAudios] = useState<Map<number, Blob>>(
     new Map()
@@ -147,11 +142,13 @@ export function RapidReview() {
   );
   const [canStartRecording, setCanStartRecording] = useState(false);
   const [recordingStartTime, setRecordingStartTime] = useState<number>(0);
+  const [repeatCount, setRepeatCount] = useState<number>(0);
+  const [showPostRecordingOptions, setShowPostRecordingOptions] =
+    useState(false);
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const audioRef = useRef<HTMLAudioElement | null>(null);
-  const userAudioRef = useRef<HTMLAudioElement | null>(null);
 
   useEffect(() => {
     if (user) {
@@ -162,11 +159,9 @@ export function RapidReview() {
 
   useEffect(() => {
     audioRef.current = new Audio();
-    userAudioRef.current = new Audio();
 
     return () => {
       audioRef.current?.pause();
-      userAudioRef.current?.pause();
       userAudioUrls.forEach((url) => URL.revokeObjectURL(url));
     };
   }, []);
@@ -240,6 +235,8 @@ export function RapidReview() {
     try {
       setSelectedDialogue(dialogue);
       setLoading(true);
+      setRepeatCount(0);
+      setShowPostRecordingOptions(false);
 
       const { data, error } = await supabase.functions.invoke(
         "get-dialogue-segments",
@@ -279,6 +276,7 @@ export function RapidReview() {
     try {
       setIsPlaying(true);
       setCanStartRecording(false);
+      setShowPostRecordingOptions(false);
 
       const { data } = await supabase.storage
         .from("dialogue-audio")
@@ -290,6 +288,8 @@ export function RapidReview() {
       audioRef.current.onended = () => {
         setIsPlaying(false);
         setCanStartRecording(true);
+        // Automatically start recording when original audio ends
+        startRecording();
       };
 
       audioRef.current.onerror = () => {
@@ -315,65 +315,14 @@ export function RapidReview() {
     }
   };
 
-  const playUserRecording = async () => {
-    const recordedAudio = recordedAudios.get(currentSegmentIndex);
-    if (!recordedAudio || !userAudioRef.current) {
-      toast({
-        title: "No Recording",
-        description: "Please record your response first",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    try {
-      setIsPlayingUserRecording(true);
-
-      let audioUrl = userAudioUrls.get(currentSegmentIndex);
-      if (!audioUrl) {
-        audioUrl = URL.createObjectURL(recordedAudio);
-        setUserAudioUrls((prev) =>
-          new Map(prev).set(currentSegmentIndex, audioUrl!)
-        );
-      }
-
-      userAudioRef.current.src = audioUrl;
-      userAudioRef.current.onended = () => setIsPlayingUserRecording(false);
-      userAudioRef.current.onerror = () => {
-        setIsPlayingUserRecording(false);
-        toast({
-          title: "Playback Error",
-          description: "Failed to play your recording",
-          variant: "destructive",
-        });
-      };
-
-      await userAudioRef.current.play();
-    } catch (error) {
-      console.error("Error playing user recording:", error);
-      toast({
-        title: "Error",
-        description: "Failed to play your recording",
-        variant: "destructive",
-      });
-      setIsPlayingUserRecording(false);
-    }
-  };
-
   const pauseAudio = () => {
     if (audioRef.current && isPlaying) {
       audioRef.current.pause();
       setIsPlaying(false);
     }
-    if (userAudioRef.current && isPlayingUserRecording) {
-      userAudioRef.current.pause();
-      setIsPlayingUserRecording(false);
-    }
   };
 
   const startRecording = async () => {
-    if (!canStartRecording) return;
-
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: {
@@ -410,6 +359,9 @@ export function RapidReview() {
         setUserAudioUrls((prev) => new Map(prev).set(currentSegmentIndex, ""));
 
         stream.getTracks().forEach((track) => track.stop());
+
+        // Show post-recording options after recording stops
+        setShowPostRecordingOptions(true);
       };
 
       mediaRecorder.start(100);
@@ -430,10 +382,10 @@ export function RapidReview() {
     if (mediaRecorderRef.current && isRecording) {
       const recordingDuration = Date.now() - recordingStartTime;
 
-      if (recordingDuration < 5000) {
+      if (recordingDuration < 1000) {
         toast({
           title: "Recording Too Short",
-          description: "Please record for at least 5 seconds",
+          description: "Please record for at least 1 second",
           variant: "destructive",
         });
         return;
@@ -444,10 +396,42 @@ export function RapidReview() {
     }
   };
 
+  const handleRepeat = () => {
+    setRepeatCount((prev) => prev + 1);
+    setShowPostRecordingOptions(false);
+    setRecordedAudios((prev) => {
+      const newMap = new Map(prev);
+      newMap.delete(currentSegmentIndex);
+      return newMap;
+    });
+
+    const audioUrl = userAudioUrls.get(currentSegmentIndex);
+    if (audioUrl) URL.revokeObjectURL(audioUrl);
+
+    setUserAudioUrls((prev) => {
+      const newUrls = new Map(prev);
+      newUrls.delete(currentSegmentIndex);
+      return newUrls;
+    });
+
+    setScoringResults((prev) =>
+      prev.filter((_, index) => index !== currentSegmentIndex)
+    );
+    setCanStartRecording(false);
+    pauseAudio();
+  };
+
+  const handleSubmit = async () => {
+    await scoreCurrentSegment();
+    setShowPostRecordingOptions(false);
+  };
+
   const goToNextSegment = () => {
     if (currentSegmentIndex < dialogueSegments.length - 1) {
       setCurrentSegmentIndex((prev) => prev + 1);
       setCanStartRecording(false);
+      setShowPostRecordingOptions(false);
+      setRepeatCount(0);
       pauseAudio();
     }
   };
@@ -456,6 +440,8 @@ export function RapidReview() {
     if (currentSegmentIndex > 0) {
       setCurrentSegmentIndex((prev) => prev - 1);
       setCanStartRecording(false);
+      setShowPostRecordingOptions(false);
+      setRepeatCount(0);
       pauseAudio();
     }
   };
@@ -526,6 +512,7 @@ export function RapidReview() {
         userId: user.id,
         mockTestId: selectedDialogue.id,
         audioFormat: "webm",
+        repeatCount: repeatCount, // Send repeat count to backend
         dialogues: [
           {
             dialogueIndex: currentSegmentIndex + 1,
@@ -587,29 +574,8 @@ export function RapidReview() {
     setRecordedAudios(new Map());
     userAudioUrls.forEach((url) => URL.revokeObjectURL(url));
     setUserAudioUrls(new Map());
-    pauseAudio();
-  };
-
-  const retrySegment = () => {
-    setRecordedAudios((prev) => {
-      const newMap = new Map(prev);
-      newMap.delete(currentSegmentIndex);
-      return newMap;
-    });
-
-    const audioUrl = userAudioUrls.get(currentSegmentIndex);
-    if (audioUrl) URL.revokeObjectURL(audioUrl);
-
-    setUserAudioUrls((prev) => {
-      const newUrls = new Map(prev);
-      newUrls.delete(currentSegmentIndex);
-      return newUrls;
-    });
-
-    setScoringResults((prev) =>
-      prev.filter((_, index) => index !== currentSegmentIndex)
-    );
-    setCanStartRecording(false);
+    setRepeatCount(0);
+    setShowPostRecordingOptions(false);
     pauseAudio();
   };
 
@@ -653,9 +619,11 @@ export function RapidReview() {
   const toggleBookmark = (dialogueId: string) => {
     setBookmarkedDialogues((prev) => {
       const newSet = new Set(prev);
-      newSet.has(dialogueId)
-        ? newSet.delete(dialogueId)
-        : newSet.add(dialogueId);
+      if (newSet.has(dialogueId)) {
+        newSet.delete(dialogueId);
+      } else {
+        newSet.add(dialogueId);
+      }
       return newSet;
     });
   };
@@ -684,9 +652,17 @@ export function RapidReview() {
           <CardHeader>
             <div className="flex items-center justify-between">
               <h2 className="text-xl font-bold">{selectedDialogue.title}</h2>
-              <Badge variant="outline">
-                Segment {currentSegmentIndex + 1} of {dialogueSegments.length}
-              </Badge>
+              <div className="flex items-center gap-2">
+                <Badge variant="outline">
+                  Segment {currentSegmentIndex + 1} of {dialogueSegments.length}
+                </Badge>
+                <Badge
+                  variant="secondary"
+                  className="bg-blue-100 text-blue-800"
+                >
+                  Repeats: {repeatCount}
+                </Badge>
+              </div>
             </div>
             <Progress value={progress} className="mt-2" />
           </CardHeader>
@@ -703,7 +679,7 @@ export function RapidReview() {
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
-            {/* Audio Waves Visualization - Replaced Original Text */}
+            {/* Audio Waves Visualization */}
             <div className="p-4 bg-muted rounded-lg">
               <div className="flex items-center justify-between mb-4">
                 <h4 className="font-medium">Original Audio</h4>
@@ -711,20 +687,24 @@ export function RapidReview() {
                   onClick={() =>
                     isPlaying ? pauseAudio() : playSegmentAudio(currentSegment)
                   }
-                  disabled={!currentSegment.audio_url || isProcessing}
-                  variant="ghost"
+                  disabled={
+                    !currentSegment.audio_url || isProcessing || isRecording
+                  }
+                  variant="default"
                   size="sm"
-                  className="h-8 w-8 p-0"
                 >
                   {isPlaying ? (
-                    <Pause className="h-4 w-4" />
+                    <div className="flex items-center gap-2">
+                      <Pause className="h-4 w-4" /> <span>Pause</span>
+                    </div>
                   ) : (
-                    <Volume2 className="h-4 w-4" />
+                    <div className="flex items-center gap-2">
+                      <Play className="h-4 w-4" /> <span>Play</span>
+                    </div>
                   )}
                 </Button>
               </div>
 
-              {/* Audio Waves Visualization */}
               <AudioWaves isPlaying={isPlaying} />
             </div>
 
@@ -740,85 +720,78 @@ export function RapidReview() {
               </div>
             )}
 
-            {/* Audio Controls */}
-            <div className="flex gap-2 flex-wrap">
-              <Button
-                onClick={() =>
-                  isPlaying ? pauseAudio() : playSegmentAudio(currentSegment)
-                }
-                disabled={!currentSegment.audio_url || isProcessing}
-                variant="outline"
-              >
-                {isPlaying ? (
-                  <Pause className="h-4 w-4" />
-                ) : (
-                  <Volume2 className="h-4 w-4" />
-                )}
-                {isPlaying ? "Pause Audio" : "Play Original Audio"}
-              </Button>
+            {/* Recording Status */}
+            {isRecording && (
+              <div className="p-4 bg-red-50 dark:bg-red-950/20 rounded-lg border border-red-200 dark:border-red-800">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <div className="h-3 w-3 bg-red-500 rounded-full animate-pulse"></div>
+                    <span className="font-medium text-red-900 dark:text-red-100">
+                      Recording in progress...
+                    </span>
+                  </div>
+                  <Button
+                    onClick={stopRecording}
+                    variant="destructive"
+                    size="sm"
+                  >
+                    <MicOff className="h-4 w-4 mr-2" />
+                    Stop Recording
+                  </Button>
+                </div>
+              </div>
+            )}
 
-              {hasRecorded && (
+            {/* Post-Recording Options */}
+            {showPostRecordingOptions && (
+              <div className="p-4 bg-green-50 dark:bg-green-950/20 rounded-lg border border-green-200 dark:border-green-800">
+                <h4 className="font-medium mb-3 text-green-900 dark:text-green-100">
+                  Recording Complete
+                </h4>
+                <div className="flex gap-2">
+                  <Button
+                    onClick={handleSubmit}
+                    disabled={isProcessing}
+                    className="bg-green-600 hover:bg-green-700 flex-1"
+                  >
+                    {isProcessing ? "Submitting..." : "Submit"}
+                  </Button>
+                  <Button
+                    onClick={handleRepeat}
+                    variant="outline"
+                    disabled={isProcessing}
+                    className="flex-1"
+                  >
+                    <RotateCcw className="h-4 w-4 mr-2" />
+                    Repeat ({repeatCount + 1})
+                  </Button>
+                </div>
+              </div>
+            )}
+
+            {/* Retry Button - Show when user has recorded but not submitted yet */}
+            {hasRecorded &&
+              !currentScore &&
+              !showPostRecordingOptions &&
+              !isRecording && (
                 <Button
-                  onClick={() =>
-                    isPlayingUserRecording ? pauseAudio() : playUserRecording()
-                  }
-                  disabled={isProcessing}
-                  variant="outline"
-                >
-                  {isPlayingUserRecording ? (
-                    <Pause className="h-4 w-4" />
-                  ) : (
-                    <Play className="h-4 w-4" />
-                  )}
-                  {isPlayingUserRecording
-                    ? "Pause Recording"
-                    : "Play Your Recording"}
-                </Button>
-              )}
-            </div>
-
-            {/* Recording Controls */}
-            <div className="flex gap-2 flex-wrap">
-              <Button
-                onClick={isRecording ? stopRecording : startRecording}
-                disabled={isProcessing || (!isRecording && !canStartRecording)}
-                variant={isRecording ? "destructive" : "default"}
-              >
-                {isRecording ? (
-                  <MicOff className="h-4 w-4" />
-                ) : (
-                  <Mic className="h-4 w-4" />
-                )}
-                {isRecording ? "Stop Recording" : "Start Recording"}
-              </Button>
-
-              {hasRecorded && !currentScore && (
-                <Button
-                  onClick={retrySegment}
+                  onClick={handleRepeat}
                   variant="outline"
                   disabled={isProcessing}
+                  className="w-full"
                 >
-                  <RotateCcw className="h-4 w-4" />
+                  <RotateCcw className="h-4 w-4 mr-2" />
                   Retry Recording
                 </Button>
               )}
-
-              {hasRecorded && !currentScore && (
-                <Button
-                  onClick={scoreCurrentSegment}
-                  disabled={isProcessing}
-                  className="bg-green-600 hover:bg-green-700"
-                >
-                  {isProcessing ? "Scoring..." : "Submit for Scoring"}
-                </Button>
-              )}
-            </div>
 
             {/* Navigation Controls */}
             <div className="flex justify-between items-center pt-4 border-t">
               <Button
                 onClick={goToPreviousSegment}
-                disabled={currentSegmentIndex === 0 || isProcessing}
+                disabled={
+                  currentSegmentIndex === 0 || isProcessing || isRecording
+                }
                 variant="outline"
               >
                 <SkipBack className="h-4 w-4 mr-2" />
@@ -828,7 +801,7 @@ export function RapidReview() {
               {isLastSegment && allSegmentsScored && (
                 <Button
                   onClick={handleBackToDialogues}
-                  disabled={isProcessing}
+                  disabled={isProcessing || isRecording}
                   className="bg-blue-600 hover:bg-blue-700"
                 >
                   Practice Completed
@@ -840,7 +813,8 @@ export function RapidReview() {
                 disabled={
                   currentSegmentIndex === dialogueSegments.length - 1 ||
                   !currentScore ||
-                  isProcessing
+                  isProcessing ||
+                  isRecording
                 }
                 variant="outline"
               >
