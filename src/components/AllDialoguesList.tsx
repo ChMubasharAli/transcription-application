@@ -220,14 +220,14 @@ const FinalResultsScreen = ({
                 </p>
               </div>
 
-              {/* Feedback */}
+              {/* Overall Feedback - CHANGED: one_line_feedback to overall_feedback */}
               <div className="p-3 bg-purple-50 dark:bg-purple-950/20 rounded-lg border border-purple-200">
                 <h4 className="font-semibold text-purple-900 dark:text-purple-100 mb-1 flex items-center gap-2">
                   <MessageCircle className="h-4 w-4" />
-                  Feedback:
+                  Overall Feedback:
                 </h4>
                 <p className="text-purple-700 dark:text-purple-300">
-                  {response.one_line_feedback || "No feedback available"}
+                  {response.overall_feedback || "No feedback available"}
                 </p>
               </div>
 
@@ -792,9 +792,14 @@ export function AllDialoguesList() {
       if (data.success && data.dialogues && data.dialogues.length > 0) {
         const result = data.dialogues[0];
 
-        // ✅ SAVE COMPLETE RESPONSE
+        // ✅ SAVE COMPLETE RESPONSE WITH OVERALL_FEEDBACK
+        const responseToSave = {
+          ...result,
+          overall_feedback: data.overall_feedback, // ✅ ADD OVERALL_FEEDBACK FROM ROOT LEVEL
+        };
+
         setSegmentResponses((prev) =>
-          new Map(prev).set(currentSegmentIndex, result)
+          new Map(prev).set(currentSegmentIndex, responseToSave)
         );
 
         if (result.answer_id) {

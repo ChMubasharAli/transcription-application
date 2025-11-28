@@ -79,7 +79,7 @@ interface ScoringResult {
     final_score: number;
     one_line_feedback: string;
   };
-  one_line_feedback: string;
+  overall_feedback: string;
 }
 
 // Audio Waves Component
@@ -555,9 +555,15 @@ export function RapidReview() {
 
       if (data.success && data.dialogues && data.dialogues.length > 0) {
         const result = data.dialogues[0];
+        // Add overall_feedback from root level to segment result
+        const resultWithOverallFeedback = {
+          ...result,
+          overall_feedback: data.overall_feedback,
+        };
+
         setScoringResults((prev) => {
           const newResults = [...prev];
-          newResults[currentSegmentIndex] = result;
+          newResults[currentSegmentIndex] = resultWithOverallFeedback;
           return newResults;
         });
 
@@ -889,11 +895,10 @@ export function RapidReview() {
                   <div className="p-3 bg-purple-50 dark:bg-purple-950/20 rounded-lg border border-purple-200">
                     <h4 className="font-semibold text-purple-900 dark:text-purple-100 mb-1 flex items-center gap-2">
                       <MessageCircle className="h-4 w-4" />
-                      Feedback:
+                      Overall Feedback:
                     </h4>
                     <p className="text-purple-700 dark:text-purple-300">
-                      {currentScore.one_line_feedback ||
-                        "No feedback available"}
+                      {currentScore.overall_feedback || "No feedback available"}
                     </p>
                   </div>
 
