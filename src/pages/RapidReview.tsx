@@ -13,6 +13,9 @@ import {
   Volume2,
   SkipBack,
   SkipForward,
+  User,
+  Target,
+  MessageCircle,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
@@ -55,14 +58,26 @@ interface DialogueSegment {
 
 interface ScoringResult {
   dialogueIndex: number;
+  answer_id: string;
+  transcript: string;
+  reference_transcript: string;
+  student_transcript: string;
   scores: {
-    final_score: number;
     accuracy_score: number;
+    accuracy_feedback: string;
     language_quality_score: number;
+    language_quality_feedback: string;
     fluency_pronunciation_score: number;
+    fluency_pronunciation_feedback: string;
     delivery_coherence_score: number;
+    delivery_coherence_feedback: string;
     cultural_context_score: number;
+    cultural_context_feedback: string;
     response_management_score: number;
+    response_management_feedback: string;
+    total_raw_score: number;
+    final_score: number;
+    one_line_feedback: string;
   };
   one_line_feedback: string;
 }
@@ -823,69 +838,97 @@ export function RapidReview() {
               </Button>
             </div>
 
-            {/* Current Score Display */}
+            {/* Current Score Display - UPDATED WITH NEW DESIGN */}
             {currentScore && (
-              <Card className="border-l-4 border-l-green-500">
+              <Card className="hover:shadow-lg transition-shadow border-l-4 border-l-green-500">
                 <CardHeader>
-                  <CardTitle className="text-lg">
-                    Segment Score: {currentScore.scores.final_score}
-                  </CardTitle>
+                  <div className="flex items-center justify-between">
+                    <CardTitle className="text-lg flex items-center gap-2">
+                      <User className="h-4 w-4 text-blue-500" />
+                      Segment {currentSegmentIndex + 1}
+                    </CardTitle>
+                    <Badge
+                      className={
+                        currentScore.scores.final_score >= 80
+                          ? "bg-green-500"
+                          : currentScore.scores.final_score >= 60
+                          ? "bg-yellow-500"
+                          : "bg-red-500"
+                      }
+                    >
+                      Score: {currentScore.scores.final_score}
+                    </Badge>
+                  </div>
                 </CardHeader>
                 <CardContent className="space-y-4">
-                  <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-                    <div className="text-center">
-                      <div className="font-semibold">
-                        {currentScore.scores.accuracy_score}
-                      </div>
-                      <div className="text-xs text-muted-foreground">
-                        Accuracy
-                      </div>
-                    </div>
-                    <div className="text-center">
-                      <div className="font-semibold">
-                        {currentScore.scores.language_quality_score}
-                      </div>
-                      <div className="text-xs text-muted-foreground">
-                        Language Quality
-                      </div>
-                    </div>
-                    <div className="text-center">
-                      <div className="font-semibold">
-                        {currentScore.scores.fluency_pronunciation_score}
-                      </div>
-                      <div className="text-xs text-muted-foreground">
-                        Fluency & Pronunciation
-                      </div>
-                    </div>
-                    <div className="text-center">
-                      <div className="font-semibold">
-                        {currentScore.scores.delivery_coherence_score}
-                      </div>
-                      <div className="text-xs text-muted-foreground">
-                        Delivery
-                      </div>
-                    </div>
-                    <div className="text-center">
-                      <div className="font-semibold">
-                        {currentScore.scores.cultural_context_score}
-                      </div>
-                      <div className="text-xs text-muted-foreground">
-                        Cultural Context
-                      </div>
-                    </div>
-                    <div className="text-center">
-                      <div className="font-semibold">
-                        {currentScore.scores.response_management_score}
-                      </div>
-                      <div className="text-xs text-muted-foreground">
-                        Response Management
-                      </div>
-                    </div>
+                  {/* Question */}
+                  <div className="p-3 bg-blue-50 dark:bg-blue-950/20 rounded-lg border border-blue-200">
+                    <h4 className="font-semibold text-blue-900 dark:text-blue-100 mb-1 flex items-center gap-2">
+                      <Target className="h-4 w-4" />
+                      Question:
+                    </h4>
+                    <p className="text-blue-700 dark:text-blue-300">
+                      {currentScore.reference_transcript ||
+                        currentSegment.text_content}
+                    </p>
                   </div>
 
-                  <div className="p-3 bg-muted rounded-lg">
-                    <h5 className="font-medium mb-1">Feedback:</h5>
-                    <p className="text-sm">{currentScore.one_line_feedback}</p>
+                  {/* Your Answer */}
+                  <div className="p-3 bg-green-50 dark:bg-green-950/20 rounded-lg border border-green-200">
+                    <h4 className="font-semibold text-green-900 dark:text-green-100 mb-1 flex items-center gap-2">
+                      <User className="h-4 w-4" />
+                      Your Answer:
+                    </h4>
+                    <p className="text-green-700 dark:text-green-300">
+                      {currentScore.student_transcript ||
+                        "No transcript available"}
+                    </p>
+                  </div>
+
+                  {/* Feedback */}
+                  <div className="p-3 bg-purple-50 dark:bg-purple-950/20 rounded-lg border border-purple-200">
+                    <h4 className="font-semibold text-purple-900 dark:text-purple-100 mb-1 flex items-center gap-2">
+                      <MessageCircle className="h-4 w-4" />
+                      Feedback:
+                    </h4>
+                    <p className="text-purple-700 dark:text-purple-300">
+                      {currentScore.one_line_feedback ||
+                        "No feedback available"}
+                    </p>
+                  </div>
+
+                  {/* Detailed Scores */}
+                  <div className="grid grid-cols-2 md:grid-cols-3 gap-2 text-sm">
+                    <div className="text-center p-2 bg-gray-50 rounded border">
+                      <div className="font-bold text-gray-700">Accuracy</div>
+                      <div>{currentScore.scores.accuracy_score}/20</div>
+                    </div>
+                    <div className="text-center p-2 bg-gray-50 rounded border">
+                      <div className="font-bold text-gray-700">Fluency</div>
+                      <div>
+                        {currentScore.scores.fluency_pronunciation_score}/10
+                      </div>
+                    </div>
+                    <div className="text-center p-2 bg-gray-50 rounded border">
+                      <div className="font-bold text-gray-700">Language</div>
+                      <div>{currentScore.scores.language_quality_score}/10</div>
+                    </div>
+                    <div className="text-center p-2 bg-gray-50 rounded border">
+                      <div className="font-bold text-gray-700">Delivery</div>
+                      <div>
+                        {currentScore.scores.delivery_coherence_score}/10
+                      </div>
+                    </div>
+                    <div className="text-center p-2 bg-gray-50 rounded border">
+                      <div className="font-bold text-gray-700">Cultural</div>
+                      <div>{currentScore.scores.cultural_context_score}/10</div>
+                    </div>
+                    <div className="text-center p-2 bg-gray-50 rounded border">
+                      <div className="font-bold text-gray-700">Response</div>
+                      <div>
+                        {currentScore.scores.response_management_score}/10
+                      </div>
+                    </div>
                   </div>
                 </CardContent>
               </Card>

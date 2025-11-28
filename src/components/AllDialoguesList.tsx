@@ -15,6 +15,10 @@ import {
   SkipBack,
   SkipForward,
   Calendar,
+  Star,
+  Target,
+  MessageCircle,
+  User,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
@@ -28,7 +32,6 @@ import {
 } from "@/components/ui/select";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Progress } from "@/components/ui/progress";
-import { json } from "node:stream/consumers";
 
 interface Dialogue {
   id: string;
@@ -54,24 +57,6 @@ interface DialogueSegment {
   speaker?: string;
   start_time?: number;
   end_time?: number;
-}
-
-interface ExamResult {
-  id: string;
-  user_id: string;
-  dialogue_id: string;
-  segment_count: number;
-  average_accuracy_score: number;
-  average_language_quality_score: number;
-  average_fluency_pronunciation_score: number;
-  average_delivery_coherence_score: number;
-  average_cultural_context_score: number;
-  average_response_management_score: number;
-  average_final_score: number;
-  total_final_score: number;
-  overall_feedback: string;
-  answer_ids: string[] | null;
-  created_at: string;
 }
 
 // Audio Waves Component
@@ -103,6 +88,181 @@ const AudioWaves = ({ isPlaying }: { isPlaying: boolean }) => {
           ))}
         </div>
       )}
+    </div>
+  );
+};
+
+// Final Results Component
+const FinalResultsScreen = ({
+  segmentResponses,
+  dialogueSegments,
+  selectedDialogue,
+  onBack,
+}: {
+  segmentResponses: Map<number, any>;
+  dialogueSegments: DialogueSegment[];
+  selectedDialogue: Dialogue;
+  onBack: () => void;
+}) => {
+  const calculateOverallScore = () => {
+    let totalScore = 0;
+    let segmentCount = 0;
+
+    segmentResponses.forEach((response) => {
+      if (response.scores?.final_score) {
+        totalScore += response.scores.final_score;
+        segmentCount++;
+      }
+    });
+
+    return segmentCount > 0 ? Math.round(totalScore / segmentCount) : 0;
+  };
+
+  const overallScore = calculateOverallScore();
+
+  const getScoreColor = (score: number) => {
+    if (score >= 80) return "text-green-500";
+    if (score >= 60) return "text-yellow-500";
+    return "text-red-500";
+  };
+
+  const getScoreBadge = (score: number) => {
+    if (score >= 80) return "bg-green-100 text-green-800 border-green-200";
+    if (score >= 60) return "bg-yellow-100 text-yellow-800 border-yellow-200";
+    return "bg-red-100 text-red-800 border-red-200";
+  };
+
+  return (
+    <div className="w-full max-w-4xl mx-auto space-y-6">
+      <Card className="border-2 border-green-200 bg-green-50 dark:bg-green-950/20">
+        <CardHeader className="text-center">
+          <div className="flex items-center justify-center gap-3">
+            <CheckCircle className="h-8 w-8 text-green-500" />
+            <h2 className="text-3xl font-bold text-green-800 dark:text-green-200">
+              Practice Complete!
+            </h2>
+          </div>
+          <p className="text-lg text-green-700 dark:text-green-300">
+            You've completed "{selectedDialogue.title}"
+          </p>
+        </CardHeader>
+      </Card>
+
+      {/* Overall Score Card */}
+      <Card>
+        <CardHeader>
+          <div className="text-center">
+            <div className="flex items-center justify-center gap-2 mb-2">
+              <Target className="h-6 w-6 text-blue-500" />
+              <h3 className="text-xl font-bold">Overall Performance</h3>
+            </div>
+            <div
+              className={`text-5xl font-bold ${getScoreColor(
+                overallScore
+              )} mb-2`}
+            >
+              {overallScore}
+            </div>
+            <Badge className={getScoreBadge(overallScore)}>
+              {overallScore >= 80
+                ? "Excellent"
+                : overallScore >= 60
+                ? "Good"
+                : "Needs Practice"}
+            </Badge>
+          </div>
+        </CardHeader>
+      </Card>
+
+      {/* Segments Results */}
+      <div className="space-y-4">
+        <h3 className="text-xl font-bold flex items-center gap-2">
+          <MessageCircle className="h-5 w-5" />
+          Segment Results
+        </h3>
+
+        {Array.from(segmentResponses.entries()).map(([index, response]) => (
+          <Card key={index} className="hover:shadow-lg transition-shadow">
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-lg flex items-center gap-2">
+                  <User className="h-4 w-4 text-blue-500" />
+                  Segment {index + 1}
+                </CardTitle>
+                <Badge
+                  className={getScoreBadge(response.scores?.final_score || 0)}
+                >
+                  Score: {response.scores?.final_score || 0}
+                </Badge>
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {/* Question */}
+              <div className="p-3 bg-blue-50 dark:bg-blue-950/20 rounded-lg border border-blue-200">
+                <h4 className="font-semibold text-blue-900 dark:text-blue-100 mb-1 flex items-center gap-2">
+                  <Target className="h-4 w-4" />
+                  Question:
+                </h4>
+                <p className="text-blue-700 dark:text-blue-300">
+                  {response.reference_transcript ||
+                    dialogueSegments[index]?.text_content}
+                </p>
+              </div>
+
+              {/* Your Answer */}
+              <div className="p-3 bg-green-50 dark:bg-green-950/20 rounded-lg border border-green-200">
+                <h4 className="font-semibold text-green-900 dark:text-green-100 mb-1 flex items-center gap-2">
+                  <User className="h-4 w-4" />
+                  Your Answer:
+                </h4>
+                <p className="text-green-700 dark:text-green-300">
+                  {response.student_transcript || "No transcript available"}
+                </p>
+              </div>
+
+              {/* Feedback */}
+              <div className="p-3 bg-purple-50 dark:bg-purple-950/20 rounded-lg border border-purple-200">
+                <h4 className="font-semibold text-purple-900 dark:text-purple-100 mb-1 flex items-center gap-2">
+                  <MessageCircle className="h-4 w-4" />
+                  Feedback:
+                </h4>
+                <p className="text-purple-700 dark:text-purple-300">
+                  {response.one_line_feedback || "No feedback available"}
+                </p>
+              </div>
+
+              {/* Detailed Scores */}
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-2 text-sm">
+                <div className="text-center p-2 bg-gray-50 rounded border">
+                  <div className="font-bold text-gray-700">Accuracy</div>
+                  <div>{response.scores?.accuracy_score || 0}/10</div>
+                </div>
+                <div className="text-center p-2 bg-gray-50 rounded border">
+                  <div className="font-bold text-gray-700">Fluency</div>
+                  <div>
+                    {response.scores?.fluency_pronunciation_score || 0}/10
+                  </div>
+                </div>
+                <div className="text-center p-2 bg-gray-50 rounded border">
+                  <div className="font-bold text-gray-700">Language</div>
+                  <div>{response.scores?.language_quality_score || 0}/10</div>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+
+      <div className="flex gap-4 pt-4">
+        <Button
+          onClick={onBack}
+          variant="default"
+          className="flex-1 bg-blue-600 hover:bg-blue-700"
+          size="lg"
+        >
+          Back to Dialogues
+        </Button>
+      </div>
     </div>
   );
 };
@@ -144,7 +304,6 @@ export function AllDialoguesList() {
   const [recordedAudios, setRecordedAudios] = useState<Map<number, Blob>>(
     new Map()
   );
-  const [examResults, setExamResults] = useState<ExamResult[]>([]);
   const [answerIds, setAnswerIds] = useState<string[]>([]);
   const [userAudioUrls, setUserAudioUrls] = useState<Map<number, string>>(
     new Map()
@@ -156,6 +315,9 @@ export function AllDialoguesList() {
   );
   const [showRecordingOptions, setShowRecordingOptions] = useState(false);
   const [autoRecordingStarted, setAutoRecordingStarted] = useState(false);
+  const [segmentResponses, setSegmentResponses] = useState<Map<number, any>>(
+    new Map()
+  );
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
@@ -186,42 +348,6 @@ export function AllDialoguesList() {
     };
   }, []);
 
-  const fetchUserExamResults = async (): Promise<ExamResult[]> => {
-    if (!user) {
-      toast({
-        title: "Error",
-        description: "User not found",
-        variant: "destructive",
-      });
-      return [];
-    }
-
-    try {
-      const { data, error } = await supabase.functions.invoke(
-        "get-user-exam-results",
-        {
-          body: { userId: user.id },
-        }
-      );
-
-      if (error) throw new Error(error.message);
-
-      if (data.success) {
-        return data.results || [];
-      } else {
-        throw new Error("Failed to fetch user exam results");
-      }
-    } catch (error) {
-      console.error("Error fetching user exam results:", error);
-      toast({
-        title: "Error",
-        description: "Failed to load your exam history",
-        variant: "destructive",
-      });
-      return [];
-    }
-  };
-
   const fetchCompletedDialogues = async () => {
     try {
       const { data, error } = await supabase
@@ -243,20 +369,6 @@ export function AllDialoguesList() {
       console.error("Error:", error);
     }
   };
-
-  useEffect(() => {
-    if (activeTab === "completed" && user) {
-      const loadCompletedResults = async () => {
-        try {
-          const results = await fetchUserExamResults();
-          setExamResults(results);
-        } catch (error) {
-          console.error("Error loading completed results:", error);
-        }
-      };
-      loadCompletedResults();
-    }
-  }, [activeTab, user]);
 
   const fetchUserLanguageAndDialogues = async () => {
     try {
@@ -313,6 +425,7 @@ export function AllDialoguesList() {
       setRepeatCounts(new Map());
       setShowRecordingOptions(false);
       setAutoRecordingStarted(false);
+      setSegmentResponses(new Map());
 
       const { data, error } = await supabase.functions.invoke(
         "get-dialogue-segments",
@@ -327,7 +440,6 @@ export function AllDialoguesList() {
         setDialogueSegments(data.segments);
         setCurrentSegmentIndex(0);
         setRecordedAudios(new Map());
-        setExamResults([]);
         setAnswerIds([]);
         setUserAudioUrls(new Map());
       } else {
@@ -345,7 +457,6 @@ export function AllDialoguesList() {
     }
   };
 
-  // MODIFIED: Auto-start recording after original audio ends
   const playSegmentAudio = async (segment: DialogueSegment) => {
     if (!segment.audio_url || !audioRef.current) return;
 
@@ -521,7 +632,6 @@ export function AllDialoguesList() {
     }
   };
 
-  // NEW: Function to handle repeat
   const handleRepeat = () => {
     const currentRepeatCount = repeatCounts.get(currentSegmentIndex) || 0;
     setRepeatCounts(
@@ -555,7 +665,6 @@ export function AllDialoguesList() {
     });
   };
 
-  // MODIFIED: Instant segment movement
   const goToNextSegment = () => {
     if (currentSegmentIndex < dialogueSegments.length - 1) {
       setCurrentSegmentIndex((prev) => prev + 1);
@@ -601,33 +710,6 @@ export function AllDialoguesList() {
     }
   };
 
-  const loadExamResults = async () => {
-    if (!user) return;
-
-    setIsProcessing(true);
-    try {
-      const results = await fetchUserExamResults();
-      setExamResults(results);
-
-      toast({
-        title: "Practice Complete!",
-        description: "Your results have been loaded successfully",
-      });
-
-      fetchCompletedDialogues();
-    } catch (error) {
-      console.error("Error loading exam results:", error);
-      toast({
-        title: "Error",
-        description: "Failed to load your results",
-        variant: "destructive",
-      });
-    } finally {
-      setIsProcessing(false);
-    }
-  };
-
-  // MODIFIED: Instant submission with background processing
   const scoreCurrentSegment = async () => {
     const currentSegment = dialogueSegments[currentSegmentIndex];
     const recordedAudio = recordedAudios.get(currentSegmentIndex);
@@ -641,17 +723,14 @@ export function AllDialoguesList() {
       return;
     }
 
-    // Instantly move to next segment
     const isLastSegment = currentSegmentIndex === dialogueSegments.length - 1;
 
     if (!isLastSegment) {
       goToNextSegment();
     } else {
-      // For last segment, show loading state but don't block UI
       setIsProcessing(true);
     }
 
-    // Process submission in background
     try {
       const arrayBuffer = await recordedAudio.arrayBuffer();
       const studentAudioBase64 = arrayBufferToBase64(arrayBuffer);
@@ -684,7 +763,7 @@ export function AllDialoguesList() {
         userId: user.id,
         mockTestId: selectedDialogue.id,
         audioFormat: "webm",
-        repeatCount: repeatCount, // Send repeat count to backend
+        repeatCount: repeatCount,
         dialogues: [
           {
             dialogueIndex: currentSegmentIndex + 1,
@@ -713,20 +792,32 @@ export function AllDialoguesList() {
       if (data.success && data.dialogues && data.dialogues.length > 0) {
         const result = data.dialogues[0];
 
-        if (result.answerId) {
-          setAnswerIds((prev) => [...prev, result.answerId]);
+        // ✅ SAVE COMPLETE RESPONSE
+        setSegmentResponses((prev) =>
+          new Map(prev).set(currentSegmentIndex, result)
+        );
+
+        if (result.answer_id) {
+          setAnswerIds((prev) => [...prev, result.answer_id]);
         }
 
         if (isLastSegment) {
-          await loadExamResults();
+          setIsProcessing(false);
+          toast({
+            title: "Practice Complete!",
+            description: "All segments have been evaluated",
+          });
         }
       } else {
         console.error("Scoring failed - no results returned");
       }
     } catch (error) {
       console.error("Error scoring segment:", error);
-      // Don't show error toast to user to maintain smooth experience
-      // Errors can be handled in background
+      toast({
+        title: "Error",
+        description: "Failed to score your response",
+        variant: "destructive",
+      });
     } finally {
       setIsProcessing(false);
     }
@@ -736,9 +827,9 @@ export function AllDialoguesList() {
     setSelectedDialogue(null);
     setDialogueSegments([]);
     setCurrentSegmentIndex(0);
-    setExamResults([]);
     setRecordedAudios(new Map());
     setRepeatCounts(new Map());
+    setSegmentResponses(new Map());
     userAudioUrls.forEach((url) => URL.revokeObjectURL(url));
     setUserAudioUrls(new Map());
     pauseAudio();
@@ -798,17 +889,7 @@ export function AllDialoguesList() {
     setActiveTab("all");
   };
 
-  const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString("en-US", {
-      year: "numeric",
-      month: "short",
-      day: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-    });
-  };
-
-  // Practice Flow UI
+  // Practice Flow UI - Check for Final Results
   if (selectedDialogue && dialogueSegments.length > 0) {
     const currentSegment = dialogueSegments[currentSegmentIndex];
     const progress =
@@ -817,129 +898,15 @@ export function AllDialoguesList() {
     const isLastSegment = currentSegmentIndex === dialogueSegments.length - 1;
     const repeatCount = repeatCounts.get(currentSegmentIndex) || 0;
 
-    if (examResults.length > 0 && isLastSegment) {
+    // ✅ FINAL RESULTS CHECK - Show final results when all segments are completed
+    if (segmentResponses.size === dialogueSegments.length && isLastSegment) {
       return (
-        <div className="w-full max-w-4xl mx-auto space-y-6">
-          <Card>
-            <CardHeader className="text-center">
-              <div className="flex items-center justify-center gap-2">
-                <CheckCircle className="h-6 w-6 text-green-500" />
-                <h2 className="text-2xl font-bold">Practice Results</h2>
-              </div>
-              <p className="text-sm text-muted-foreground">
-                Showing {examResults.length} practice session
-                {examResults.length > 1 ? "s" : ""}
-              </p>
-            </CardHeader>
-            <CardContent className="space-y-6">
-              {/* Sort results by date (newest first) */}
-              {examResults
-                .sort(
-                  (a, b) =>
-                    new Date(b.created_at).getTime() -
-                    new Date(a.created_at).getTime()
-                )
-                .map((result, index) => (
-                  <div
-                    key={result.id}
-                    className="space-y-4 p-4 border rounded-lg"
-                  >
-                    <div className="flex items-center justify-between">
-                      <h3 className="font-semibold text-lg">
-                        Practice Session {examResults.length - index}
-                      </h3>
-                      <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                        <Calendar className="h-4 w-4" />
-                        {formatDate(result.created_at)}
-                      </div>
-                    </div>
-
-                    <div className="text-center">
-                      <div className="text-3xl font-bold text-green-500 mb-2">
-                        {result.total_final_score}
-                      </div>
-                      <p className="text-md text-muted-foreground">
-                        Final Score
-                      </p>
-                    </div>
-
-                    <div className="p-4 bg-muted rounded-lg">
-                      <h3 className="font-semibold mb-2">Overall Feedback:</h3>
-                      <p>{result.overall_feedback}</p>
-                    </div>
-
-                    <div className="grid grid-cols-2 md:grid-cols-3 gap-4 text-sm">
-                      <div className="text-center p-3 bg-blue-50 rounded-lg">
-                        <div className="font-bold text-blue-600">
-                          {result.average_accuracy_score.toFixed(1)}
-                        </div>
-                        <div className="text-muted-foreground">Accuracy</div>
-                      </div>
-                      <div className="text-center p-3 bg-green-50 rounded-lg">
-                        <div className="font-bold text-green-600">
-                          {result.average_language_quality_score.toFixed(1)}
-                        </div>
-                        <div className="text-muted-foreground">Language</div>
-                      </div>
-                      <div className="text-center p-3 bg-purple-50 rounded-lg">
-                        <div className="font-bold text-purple-600">
-                          {result.average_fluency_pronunciation_score.toFixed(
-                            1
-                          )}
-                        </div>
-                        <div className="text-muted-foreground">Fluency</div>
-                      </div>
-                      <div className="text-center p-3 bg-orange-50 rounded-lg">
-                        <div className="font-bold text-orange-600">
-                          {result.average_delivery_coherence_score.toFixed(1)}
-                        </div>
-                        <div className="text-muted-foreground">Delivery</div>
-                      </div>
-                      <div className="text-center p-3 bg-indigo-50 rounded-lg">
-                        <div className="font-bold text-indigo-600">
-                          {result.average_cultural_context_score.toFixed(1)}
-                        </div>
-                        <div className="text-muted-foreground">Cultural</div>
-                      </div>
-                      <div className="text-center p-3 bg-pink-50 rounded-lg">
-                        <div className="font-bold text-pink-600">
-                          {result.average_response_management_score.toFixed(1)}
-                        </div>
-                        <div className="text-muted-foreground">Response</div>
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-4 text-sm">
-                      <div className="text-center p-3 bg-gray-50 rounded-lg">
-                        <div className="font-bold text-gray-700">
-                          {result.average_final_score.toFixed(1)}
-                        </div>
-                        <div className="text-muted-foreground">
-                          Average Score
-                        </div>
-                      </div>
-                      <div className="text-center p-3 bg-gray-50 rounded-lg">
-                        <div className="font-bold text-gray-700">
-                          {result.segment_count}
-                        </div>
-                        <div className="text-muted-foreground">Segments</div>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-
-              <div className="flex gap-4 pt-4">
-                <Button
-                  onClick={handleBackToDialogues}
-                  variant="outline"
-                  className="flex-1"
-                >
-                  Back to Dialogues
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
+        <FinalResultsScreen
+          segmentResponses={segmentResponses}
+          dialogueSegments={dialogueSegments}
+          selectedDialogue={selectedDialogue}
+          onBack={handleBackToDialogues}
+        />
       );
     }
 
@@ -955,7 +922,6 @@ export function AllDialoguesList() {
               </Badge>
             </div>
             <Progress value={progress} className="mt-2" />
-            {/* Show repeat count */}
             {repeatCount > 0 && (
               <div className="text-sm text-muted-foreground mt-2">
                 Repeats used: {repeatCount}
@@ -1130,9 +1096,6 @@ export function AllDialoguesList() {
   // Original Dialogues List UI
   const sortedDialogues = getSortedAndFilteredDialogues();
   const completedCount = completedDialogueIds.size;
-
-  const showExamResultsInCompleteTab =
-    activeTab === "completed" && examResults.length > 0;
 
   return (
     <div className="space-y-6">
