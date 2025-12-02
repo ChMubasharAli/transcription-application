@@ -62,6 +62,7 @@ interface ScoringResult {
   transcript: string;
   reference_transcript: string;
   student_transcript: string;
+  repeatCount: number;
   scores: {
     accuracy_score: number;
     accuracy_feedback: string;
@@ -677,12 +678,6 @@ export function RapidReview() {
                 <Badge variant="outline">
                   Segment {currentSegmentIndex + 1} of {dialogueSegments.length}
                 </Badge>
-                <Badge
-                  variant="secondary"
-                  className="bg-blue-100 text-blue-800"
-                >
-                  Repeats: {repeatCount}
-                </Badge>
               </div>
             </div>
             <Progress value={progress} className="mt-2" />
@@ -853,16 +848,8 @@ export function RapidReview() {
                       <User className="h-4 w-4 text-blue-500" />
                       Segment {currentSegmentIndex + 1}
                     </CardTitle>
-                    <Badge
-                      className={
-                        currentScore.scores.final_score >= 80
-                          ? "bg-green-500"
-                          : currentScore.scores.final_score >= 60
-                          ? "bg-yellow-500"
-                          : "bg-red-500"
-                      }
-                    >
-                      Score: {currentScore.scores.final_score}
+                    <Badge className="bg-[#2FE7D1]">
+                      Repeat Count : {currentScore.repeatCount}
                     </Badge>
                   </div>
                 </CardHeader>
@@ -905,34 +892,53 @@ export function RapidReview() {
                   {/* Detailed Scores */}
                   <div className="grid grid-cols-2 md:grid-cols-3 gap-2 text-sm">
                     <div className="text-center p-2 bg-gray-50 rounded border">
-                      <div className="font-bold text-gray-700">Accuracy</div>
-                      <div>{currentScore.scores.accuracy_score}/20</div>
+                      <div className="font-bold text-gray-700">
+                        Accuracy & Meaning
+                      </div>
+                      <div>{currentScore.scores.accuracy_score}/15</div>
                     </div>
                     <div className="text-center p-2 bg-gray-50 rounded border">
-                      <div className="font-bold text-gray-700">Fluency</div>
+                      <div className="font-bold text-gray-700">
+                        Language Quality
+                      </div>
                       <div>
                         {currentScore.scores.fluency_pronunciation_score}/10
                       </div>
                     </div>
                     <div className="text-center p-2 bg-gray-50 rounded border">
-                      <div className="font-bold text-gray-700">Language</div>
-                      <div>{currentScore.scores.language_quality_score}/10</div>
+                      <div className="font-bold text-gray-700">
+                        Fluency & Pronunciation
+                      </div>
+                      <div>{currentScore.scores.language_quality_score}/8</div>
                     </div>
                     <div className="text-center p-2 bg-gray-50 rounded border">
-                      <div className="font-bold text-gray-700">Delivery</div>
+                      <div className="font-bold text-gray-700">
+                        Delivery & Coherence
+                      </div>
                       <div>
-                        {currentScore.scores.delivery_coherence_score}/10
+                        {currentScore.scores.delivery_coherence_score}/5
                       </div>
                     </div>
                     <div className="text-center p-2 bg-gray-50 rounded border">
-                      <div className="font-bold text-gray-700">Cultural</div>
-                      <div>{currentScore.scores.cultural_context_score}/10</div>
+                      <div className="font-bold text-gray-700">
+                        Cultural & Contextual
+                      </div>
+                      <div>{currentScore.scores.cultural_context_score}/4</div>
                     </div>
                     <div className="text-center p-2 bg-gray-50 rounded border">
-                      <div className="font-bold text-gray-700">Response</div>
-                      <div>
-                        {currentScore.scores.response_management_score}/10
+                      <div className="font-bold text-gray-700">
+                        Response Management
                       </div>
+                      <div>
+                        {currentScore.scores.response_management_score}/3
+                      </div>
+                    </div>
+
+                    <div className="text-center col-span-2 md:col-span-3 p-2 bg-gray-50 rounded border">
+                      <div className="font-bold text-gray-700">
+                        Total Final Score{" "}
+                      </div>
+                      <div>45</div>
                     </div>
                   </div>
                 </CardContent>
