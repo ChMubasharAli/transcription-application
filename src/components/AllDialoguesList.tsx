@@ -189,10 +189,8 @@ const FinalResultsScreen = ({
                   <User className="h-4 w-4 text-blue-500" />
                   Segment {index + 1}
                 </CardTitle>
-                <Badge
-                  className={getScoreBadge(response.scores?.final_score || 0)}
-                >
-                  Score: {response.scores?.final_score || 0}
+                <Badge className="bg-[#2FE7D1]">
+                  Repeat Count : {response.repeatCount}
                 </Badge>
               </div>
             </CardHeader>
@@ -234,18 +232,47 @@ const FinalResultsScreen = ({
               {/* Detailed Scores */}
               <div className="grid grid-cols-2 md:grid-cols-3 gap-2 text-sm">
                 <div className="text-center p-2 bg-gray-50 rounded border">
-                  <div className="font-bold text-gray-700">Accuracy</div>
-                  <div>{response.scores?.accuracy_score || 0}/10</div>
-                </div>
-                <div className="text-center p-2 bg-gray-50 rounded border">
-                  <div className="font-bold text-gray-700">Fluency</div>
-                  <div>
-                    {response.scores?.fluency_pronunciation_score || 0}/10
+                  <div className="font-bold text-gray-700">
+                    Accuracy & Meaning
                   </div>
+                  <div>{response.scores.accuracy_score}/15</div>
                 </div>
                 <div className="text-center p-2 bg-gray-50 rounded border">
-                  <div className="font-bold text-gray-700">Language</div>
-                  <div>{response.scores?.language_quality_score || 0}/10</div>
+                  <div className="font-bold text-gray-700">
+                    Language Quality
+                  </div>
+                  <div>{response.scores.fluency_pronunciation_score}/10</div>
+                </div>
+                <div className="text-center p-2 bg-gray-50 rounded border">
+                  <div className="font-bold text-gray-700">
+                    Fluency & Pronunciation
+                  </div>
+                  <div>{response.scores.language_quality_score}/8</div>
+                </div>
+                <div className="text-center p-2 bg-gray-50 rounded border">
+                  <div className="font-bold text-gray-700">
+                    Delivery & Coherence
+                  </div>
+                  <div>{response.scores.delivery_coherence_score}/5</div>
+                </div>
+                <div className="text-center p-2 bg-gray-50 rounded border">
+                  <div className="font-bold text-gray-700">
+                    Cultural & Contextual
+                  </div>
+                  <div>{response.scores.cultural_context_score}/4</div>
+                </div>
+                <div className="text-center p-2 bg-gray-50 rounded border">
+                  <div className="font-bold text-gray-700">
+                    Response Management
+                  </div>
+                  <div>{response.scores.response_management_score}/3</div>
+                </div>
+
+                <div className="text-center col-span-2 md:col-span-3 p-2 bg-gray-50 rounded border">
+                  <div className="font-bold text-gray-700">
+                    Total Final Score{" "}
+                  </div>
+                  <div>45</div>
                 </div>
               </div>
             </CardContent>
